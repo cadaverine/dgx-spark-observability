@@ -28,6 +28,9 @@ done
 # Patch DS_PROMETHEUS placeholder so dashboards bind to our provisioned
 # Prometheus datasource (uid: prometheus) without requiring a manual import.
 echo "Patching datasource UID placeholders..."
+# shellcheck disable=SC2016 # The ${DS_PROMETHEUS}-style strings are LITERAL
+# placeholders inside the dashboard JSON files (Grafana export format), not
+# shell variables. Single quotes are correct here.
 for f in *.json; do
   sed -i \
     -e 's/"${DS_PROMETHEUS}"/"prometheus"/g' \
