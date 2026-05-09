@@ -1,0 +1,76 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware
+      description: CPU architecture, GPU model, kernel version (e.g. "aarch64, NVIDIA GB10 / sm_121a, 6.17.0-nvidia").
+      placeholder: aarch64, NVIDIA GB10 / sm_121a, 6.17.0-nvidia
+    validations:
+      required: true
+
+  - type: input
+    id: docker-version
+    attributes:
+      label: Docker version
+      description: Output of `docker version --format '{{.Server.Version}}'`.
+      placeholder: "27.3.1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the symptom, including the exact failing command if applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen instead?
+    validations:
+      required: false
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Minimal steps to reproduce the issue.
+      placeholder: |
+        1. cp .env.example .env
+        2. docker compose up -d
+        3. ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: compose-config
+    attributes:
+      label: docker compose config -q output
+      description: Paste full output (or "no output, exit 0").
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: container-logs
+    attributes:
+      label: Container logs
+      description: Output of `docker compose logs <service> --tail 200` for the affected service(s).
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Anything else that might help — config tweaks, related upstream issues, etc.
+    validations:
+      required: false

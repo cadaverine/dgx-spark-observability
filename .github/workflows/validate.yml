@@ -1,0 +1,87 @@
+name: validate
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyYAML
+        run: python3 -m pip install --quiet pyyaml
+
+      - name: Write dummy .env
+        run: |
+          cat > .env <<'EOF'
+          TZ=UTC
+          BIND_ADDRESS=127.0.0.1
+          GRAFANA_ADMIN_USER=admin
+          GRAFANA_ADMIN_PASSWORD=changeme
+          NTFY_TOPIC=ci-dummy-topic
+          PROMETHEUS_RETENTION_DAYS=180
+          LOKI_RETENTION_DAYS=90
+          DCGM_EXPORTER_IMAGE=nvcr.io/nvidia/k8s/dcgm-exporter:4.1.1-4.0.4-ubuntu22.04
+          EOF
+
+      - name: Validate docker compose
+        run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Validate YAML syntax (Loki, Promtail, ntfy, prometheus, alertmanager, dependabot, issue config, workflow)
+        run: |
+          python3 -c "
+          import yaml, sys
+          files = [
+            'prometheus/prometheus.yml',
+            'prometheus/rules/host.yml',
+            'alertmanager/alertmanager.yml',
+            'promtail/promtail-config.yml',
+            'loki/loki-config.yml',
+            'ntfy/server.yml',
+            '.github/dependabot.yml',
+            '.github/ISSUE_TEMPLATE/config.yml',
+            '.github/ISSUE_TEMPLATE/bug-report.yml',
+            '.github/ISSUE_TEMPLATE/quirk-report.yml',
+            '.github/workflows/validate.yml',
+          ]
+          for f in files:
+              with open(f) as fh:
+                  yaml.safe_load(fh)
+              print(f'ok: {f}')
+          "
+
+      - name: Validate dashboard JSON
+        run: python3 -m json.tool grafana/dashboards/custom/spark-host-overview.json > /dev/null
+
+      - name: Validate Prometheus rules (promtool)
+        run: |
+          docker run --rm -v "$PWD/prometheus/rules:/rules:ro" \
+            --entrypoint promtool prom/prometheus:v2.54.1 \
+            check rules /rules/host.yml
+
+      - name: Validate Alertmanager config (amtool)
+        run: |
+          # The runtime config substitutes ${TZ} and ${NTFY_TOPIC}; for static
+          # validation, render those placeholders into a temp copy first.
+          mkdir -p /tmp/am
+          sed -e 's/${TZ}/UTC/g' -e 's/${NTFY_TOPIC}/ci-dummy-topic/g' \
+            alertmanager/alertmanager.yml > /tmp/am/alertmanager.yml
+          docker run --rm -v "/tmp/am:/etc/alertmanager:ro" \
+            --entrypoint amtool prom/alertmanager:v0.27.0 \
+            check-config /etc/alertmanager/alertmanager.yml
+
+      - name: Shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck scripts/*.sh alertmanager/entrypoint.sh

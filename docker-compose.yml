@@ -4,6 +4,7 @@ services:
     container_name: prometheus
     restart: unless-stopped
     networks: [observability-net]
+    mem_limit: 1g
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -24,6 +25,7 @@ services:
     container_name: grafana
     restart: unless-stopped
     networks: [observability-net]
+    mem_limit: 512m
     depends_on:
       - prometheus
     ports:
@@ -47,6 +49,7 @@ services:
     restart: unless-stopped
     network_mode: host
     pid: host
+    mem_limit: 128m
     volumes:
       - /:/rootfs:ro,rslave
       - /proc:/host/proc:ro
@@ -69,6 +72,7 @@ services:
     container_name: smartctl-exporter
     restart: unless-stopped
     networks: [observability-net]
+    mem_limit: 128m
     privileged: true
     user: root
     volumes:
@@ -83,6 +87,7 @@ services:
     container_name: cadvisor
     restart: unless-stopped
     networks: [observability-net]
+    mem_limit: 256m
     privileged: true
     devices:
       - /dev/kmsg
@@ -103,6 +108,7 @@ services:
     container_name: dcgm-exporter
     restart: unless-stopped
     networks: [observability-net]
+    mem_limit: 1g
     runtime: nvidia
     cap_add:
       - SYS_ADMIN
@@ -123,6 +129,7 @@ services:
     runtime: nvidia
     network_mode: none
     pid: host
+    mem_limit: 64m
     volumes:
       - ./scripts/nvidia-smi-textfile.sh:/usr/local/bin/nvidia-smi-textfile.sh:ro
       - node_exporter_textfile:/var/lib/node_exporter/textfile
@@ -137,6 +144,7 @@ services:
     container_name: loki
     restart: unless-stopped
     networks: [observability-net]
+    mem_limit: 1g
     volumes:
       - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
       - loki_data:/loki
@@ -147,6 +155,7 @@ services:
     container_name: promtail
     restart: unless-stopped
     networks: [observability-net]
+    mem_limit: 256m
     depends_on:
       - loki
     volumes:
@@ -160,6 +169,7 @@ services:
     container_name: alertmanager
     restart: unless-stopped
     networks: [observability-net]
+    mem_limit: 128m
     ports:
       - "${BIND_ADDRESS}:9093:9093"
     volumes:
@@ -179,6 +189,7 @@ services:
     container_name: ntfy
     restart: unless-stopped
     networks: [observability-net]
+    mem_limit: 64m
     ports:
       - "${BIND_ADDRESS}:8081:80"
     volumes:

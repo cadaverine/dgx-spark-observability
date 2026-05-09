@@ -54,6 +54,13 @@ curl -sf http://127.0.0.1:3001/api/health   # Grafana check
 docker compose restart grafana
 ```
 
+## What it looks like
+
+<!-- TODO: drop a real screenshot at docs/img/dashboard.png. The link above expects that path. -->
+![Spark Host Overview dashboard](docs/img/dashboard.png)
+
+*38-panel dashboard covering system / GPU / thermal / storage / network / containers + logs in one view. See [`grafana/dashboards/custom/spark-host-overview.json`](grafana/dashboards/custom/spark-host-overview.json).*
+
 ## Endpoints
 
 All UIs bind to `${BIND_ADDRESS}` (default `127.0.0.1`). For remote access either set `BIND_ADDRESS` to a Tailscale IP, or SSH-forward:

@@ -236,7 +236,7 @@ After 7–10 days of running:
 
 This template is host-level only. If you want application-level monitoring on top, the additive path is:
 
-- Attach `prometheus` to your application's Docker network (e.g. `aeon-net`) so it can reach app `/metrics` endpoints.
+- Attach `prometheus` to your application's Docker network (e.g. `app-net`) so it can reach app `/metrics` endpoints.
 - Add scrape jobs in `prometheus.yml` with new labels (`service`, `model`, etc.).
 - Add a new Promtail pipeline for container `stdout`/`stderr` (separate from the host log pipeline).
 - Drop new dashboards into `grafana/dashboards/custom/`.

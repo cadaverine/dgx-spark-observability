@@ -1,0 +1,46 @@
+name: Quirk report
+description: Another quirk to add to docs/DGX-SPARK-QUIRKS.md.
+title: "[quirk] "
+labels: ["quirk-report", "documentation"]
+body:
+  - type: input
+    id: hardware-affected
+    attributes:
+      label: Hardware affected
+      description: CPU arch + GPU model + driver version (e.g. "aarch64 / GB10 / driver 580.x").
+      placeholder: aarch64 / GB10 / driver 580.x
+    validations:
+      required: true
+
+  - type: textarea
+    id: symptom
+    attributes:
+      label: Symptom
+      description: What did you observe? Error message, missing metric, wrong value, etc.
+    validations:
+      required: true
+
+  - type: textarea
+    id: cause
+    attributes:
+      label: Cause (if known)
+      description: Root cause as best you understand it. Speculation is fine — flag as such.
+    validations:
+      required: false
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround you used
+      description: Config snippet, command, etc. that made it work.
+    validations:
+      required: false
+
+  - type: input
+    id: upstream-link
+    attributes:
+      label: Upstream issue link
+      description: URL to upstream tracker if one exists.
+      placeholder: https://github.com/...
+    validations:
+      required: false

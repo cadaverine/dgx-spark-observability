@@ -161,3 +161,19 @@ groups:
           layer: "1"
         annotations:
           summary: "Context switches > 100k/s — possible livelock"
+
+      - alert: LokiDiskHigh
+        expr: |
+          container_fs_usage_bytes{container_label_com_docker_compose_service="loki"}
+            > 50 * 1024 * 1024 * 1024
+        for: 30m
+        labels:
+          severity: warning
+          layer: "1"
+        annotations:
+          summary: "Loki on-disk volume > 50 GB"
+          runbook: |
+            1) docker exec loki du -sh /loki/* | sort -h | tail
+            2) docker compose logs loki --tail 100 | grep -i 'compact\|retention'
+            3) If retention compactor is behind, lower LOKI_RETENTION_DAYS in .env
+            4) Investigate which scrape source produces unexpected log volume
