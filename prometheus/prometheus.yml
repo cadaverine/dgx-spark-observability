@@ -1,0 +1,50 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    host: spark
+    hardware: gb10
+    layer: "1"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: node
+    static_configs:
+      - targets: ['host.docker.internal:9100']
+        labels:
+          instance: spark
+
+  - job_name: smartctl
+    scrape_interval: 60s
+    static_configs:
+      - targets: ['smartctl-exporter:9633']
+        labels:
+          instance: spark
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          instance: spark
+
+  - job_name: dcgm
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['dcgm-exporter:9400']
+        labels:
+          instance: spark
+    # No static `gpu` label — DCGM emits its own `gpu="0"` per metric, and a
+    # static override would force exported_gpu fallback that breaks dashboard
+    # variable substitution (community dashboard 12239 filters by `gpu`).
+    # `hardware: gb10` is already inherited from global external_labels.

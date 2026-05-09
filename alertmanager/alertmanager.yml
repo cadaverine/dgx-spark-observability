@@ -1,0 +1,68 @@
+global:
+  resolve_timeout: 5m
+
+time_intervals:
+  - name: night
+    time_intervals:
+      # Alertmanager requires start < end within a single day, so an overnight
+      # window (23:00 → next-day 08:00) must be split into two ranges.
+      # See docs/DGX-SPARK-QUIRKS.md (section "Alertmanager mute_time_intervals
+      # can't span midnight") for upstream context.
+      - times:
+          - start_time: '00:00'
+            end_time: '08:00'
+          - start_time: '23:00'
+            end_time: '24:00'
+        location: '${TZ}'
+
+route:
+  # NOTE: Alertmanager v0.27 disallows mute_time_intervals on the root route
+  # ("root route must not have any mute time intervals"). The night mute is
+  # therefore declared on every child route below — which still covers every
+  # alert because the child matchers (severity =~ critical|warning|info)
+  # together exhaust the routing space.
+  receiver: ntfy-warning
+  group_by: [alertname, severity, host]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = "critical"
+      receiver: ntfy-critical
+      mute_time_intervals:
+        - night
+    - matchers:
+        - severity = "warning"
+      receiver: ntfy-warning
+      mute_time_intervals:
+        - night
+    - matchers:
+        - severity = "info"
+      receiver: ntfy-info
+      mute_time_intervals:
+        - night
+
+receivers:
+  - name: ntfy-critical
+    webhook_configs:
+      - url: 'http://ntfy/${NTFY_TOPIC}'
+        send_resolved: true
+        max_alerts: 0
+  - name: ntfy-warning
+    webhook_configs:
+      - url: 'http://ntfy/${NTFY_TOPIC}'
+        send_resolved: true
+        max_alerts: 0
+  - name: ntfy-info
+    webhook_configs:
+      - url: 'http://ntfy/${NTFY_TOPIC}'
+        send_resolved: false
+        max_alerts: 0
+
+inhibit_rules:
+  - source_matchers:
+      - alertname = "NodeExporterDown"
+    target_matchers:
+      - severity =~ "warning|critical"
+    equal: [host]

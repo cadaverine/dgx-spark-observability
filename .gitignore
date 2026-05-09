@@ -1,0 +1,8 @@
+.env
+.env.local
+*.local
+
+# Grafana community dashboards are fetched per-clone via
+# scripts/fetch-community-dashboards.sh (keeps the repo small and
+# ensures users always get the latest upstream revision).
+grafana/dashboards/community/*.json

@@ -1,0 +1,10 @@
+base-url: http://localhost:8081
+listen-http: ":80"
+behind-proxy: false
+attachment-cache-dir: /var/cache/ntfy/attachments
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: "12h"
+auth-default-access: read-write
+log-level: info
+enable-signup: false
+enable-login: false

@@ -1,0 +1,163 @@
+groups:
+  - name: host-critical
+    interval: 30s
+    rules:
+      - alert: HostMemoryCritical
+        expr: |
+          (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.95
+          and node_memory_SwapFree_bytes < node_memory_SwapTotal_bytes * 0.5
+        for: 5m
+        labels:
+          severity: critical
+          layer: "1"
+        annotations:
+          summary: "RAM > 95% and swap heavily used (host=spark)"
+          runbook: |
+            1) Open Grafana → Spark Host Overview → Containers row
+            2) Find top RAM-consumer container
+            3) If <your-heavy-process> — check unified memory tuning
+            4) Restart anomalous consumer
+
+      - alert: DiskCritical
+        expr: |
+          (1 - node_filesystem_avail_bytes{mountpoint=~"/|/var",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint=~"/|/var",fstype!~"tmpfs|overlay"}) > 0.95
+        for: 5m
+        labels:
+          severity: critical
+          layer: "1"
+        annotations:
+          summary: "Disk {{ $labels.mountpoint }} > 95% (host=spark)"
+          runbook: |
+            1) df -h
+            2) docker system df
+            3) du -sh /var/lib/docker/volumes/* | sort -h | tail
+            4) Cleanup old logs/images or raise retention threshold
+
+      - alert: GpuTempCritical
+        expr: DCGM_FI_DEV_GPU_TEMP > 80
+        for: 2m
+        labels:
+          severity: critical
+          layer: "1"
+        annotations:
+          summary: "GPU temp > 80°C ({{ $value }}°C)"
+          runbook: |
+            1) Open Spark Host Overview → GPU row → Throttle indicator
+            2) Check cooling — dust, fans
+            3) Reduce load (pause <your-heavy-process> containers)
+
+      - alert: HostOomDetected
+        expr: |
+          sum by (host) (count_over_time({host="spark", oom_killed="true"}[5m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          layer: "1"
+        annotations:
+          summary: "OOM killer fired (host=spark)"
+          runbook: |
+            1) Grafana → Containers row → OOM events panel
+            2) Check which process was killed
+            3) Check RAM trend at the moment of kill
+            4) If recurring — increase swap or reduce the offender's memory budget
+
+      - alert: NodeExporterDown
+        expr: up{job="node"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          layer: "1"
+        annotations:
+          summary: "node-exporter unavailable — blind on host metrics"
+          runbook: |
+            1) docker compose ps node-exporter
+            2) docker compose logs node-exporter --tail 50
+            3) Restart if container is alive
+
+      - alert: NvmeCriticalWarning
+        expr: smartctl_device_critical_warning > 0
+        for: 0m
+        labels:
+          severity: critical
+          layer: "1"
+        annotations:
+          summary: "NVMe critical warning bitmask non-zero on {{ $labels.device }}"
+          runbook: |
+            1) docker exec smartctl-exporter smartctl -a /dev/{{ $labels.device }}
+            2) Check media errors, available spare, percentage used
+            3) Backup data; SSD may be approaching end of life
+
+  - name: host-warning
+    interval: 30s
+    rules:
+      - alert: HostMemoryHigh
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.85
+        for: 15m
+        labels:
+          severity: warning
+          layer: "1"
+        annotations:
+          summary: "RAM > 85% for 15 minutes"
+
+      - alert: DiskWarning
+        expr: |
+          (1 - node_filesystem_avail_bytes{mountpoint=~"/|/var",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint=~"/|/var",fstype!~"tmpfs|overlay"}) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          layer: "1"
+        annotations:
+          summary: "Disk {{ $labels.mountpoint }} > 85%"
+
+      - alert: GpuMemoryHigh
+        expr: |
+          (nvidia_gpu_memory_used_bytes / nvidia_gpu_memory_total_bytes) > 0.90
+        for: 10m
+        labels:
+          severity: warning
+          layer: "1"
+        annotations:
+          summary: "GPU memory > 90% for 10 minutes (gpu={{ $labels.gpu }})"
+          note: "On unified memory architecture this measures sum of compute-app allocations."
+
+      - alert: GpuThermalThrottle
+        expr: nvidia_gpu_throttle_active == 1
+        for: 5m
+        labels:
+          severity: warning
+          layer: "1"
+        annotations:
+          summary: "GPU throttling active for 5+ minutes (gpu={{ $labels.gpu }})"
+          note: "From nvidia-smi clocks_throttle_reasons.active. Includes thermal AND power-cap throttle."
+
+      - alert: NvmeMediaErrors
+        expr: smartctl_device_media_errors > 0
+        for: 0m
+        labels:
+          severity: warning
+          layer: "1"
+        annotations:
+          summary: "NVMe media errors > 0 on {{ $labels.device }} ({{ $value }} errors)"
+          runbook: |
+            1) Any media errors are a sign of a degrading drive
+            2) docker exec smartctl-exporter smartctl -a /dev/{{ $labels.device }}
+            3) Plan replacement before drive fails completely
+
+      - alert: NvmeAvailableSpareLow
+        expr: |
+          smartctl_device_available_spare < smartctl_device_available_spare_threshold + 10
+        for: 0m
+        labels:
+          severity: warning
+          layer: "1"
+        annotations:
+          summary: "NVMe spare blocks within 10% of threshold on {{ $labels.device }}"
+
+      - alert: HighContextSwitches
+        expr: rate(node_context_switches_total[1m]) > 100000
+        for: 10m
+        labels:
+          severity: warning
+          layer: "1"
+        annotations:
+          summary: "Context switches > 100k/s — possible livelock"

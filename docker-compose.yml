@@ -1,0 +1,200 @@
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    restart: unless-stopped
+    networks: [observability-net]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${BIND_ADDRESS}:9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION_DAYS}d
+      - --storage.tsdb.retention.size=30GB
+      - --web.enable-lifecycle
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    restart: unless-stopped
+    networks: [observability-net]
+    depends_on:
+      - prometheus
+    ports:
+      - "${BIND_ADDRESS}:3001:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      TZ: ${TZ}
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    volumes:
+      - /:/rootfs:ro,rslave
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - node_exporter_textfile:/var/lib/node_exporter/textfile:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|run|var/lib/docker/.+|var/lib/containers/.+)($$|/)
+      - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|cgroup.*|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$$
+      - --collector.processes
+      - --collector.textfile.directory=/var/lib/node_exporter/textfile
+
+  smartctl-exporter:
+    # NOTE: third-party multi-arch rebuild of prometheus-community/smartctl_exporter.
+    # Upstream ships amd64-only; this image adds arm64 support. See OSS findings
+    # inbox for the upstream issue we plan to file.
+    image: namerci/smartctl-exporter:0.14.0
+    container_name: smartctl-exporter
+    restart: unless-stopped
+    networks: [observability-net]
+    privileged: true
+    user: root
+    volumes:
+      - /dev:/dev:ro
+    command:
+      - --smartctl.interval=120s
+      - --smartctl.rescan=10m
+      - --web.listen-address=:9633
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    container_name: cadvisor
+    restart: unless-stopped
+    networks: [observability-net]
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command:
+      - --housekeeping_interval=10s
+      - --docker_only=true
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service
+
+  dcgm-exporter:
+    image: ${DCGM_EXPORTER_IMAGE}
+    container_name: dcgm-exporter
+    restart: unless-stopped
+    networks: [observability-net]
+    runtime: nvidia
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      DCGM_EXPORTER_LISTEN: ":9400"
+      DCGM_EXPORTER_KUBERNETES: "false"
+
+  nvidia-textfile:
+    # Augments dcgm-exporter — provides nvidia_gpu_memory_*_bytes which
+    # DCGM doesn't expose on unified memory (Blackwell GB10 / sm_121a).
+    # Bind-mounts host /proc/meminfo because GB10 reports memory.used/
+    # memory.total as [N/A] in nvidia-smi (no separate VRAM pool); the
+    # script derives "total" from host RAM and "used" from per-process
+    # compute-apps. See script header for details.
+    image: nvcr.io/nvidia/cuda:12.6.1-base-ubuntu22.04
+    container_name: nvidia-textfile
+    restart: unless-stopped
+    runtime: nvidia
+    network_mode: none
+    pid: host
+    volumes:
+      - ./scripts/nvidia-smi-textfile.sh:/usr/local/bin/nvidia-smi-textfile.sh:ro
+      - node_exporter_textfile:/var/lib/node_exporter/textfile
+      - /proc/meminfo:/host/proc/meminfo:ro
+    command: ["/usr/local/bin/nvidia-smi-textfile.sh"]
+    environment:
+      OUT_DIR: /var/lib/node_exporter/textfile
+      MEMINFO: /host/proc/meminfo
+
+  loki:
+    image: grafana/loki:3.1.1
+    container_name: loki
+    restart: unless-stopped
+    networks: [observability-net]
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+
+  promtail:
+    image: grafana/promtail:3.1.1
+    container_name: promtail
+    restart: unless-stopped
+    networks: [observability-net]
+    depends_on:
+      - loki
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/log:/var/log:ro
+      - promtail_positions:/var/lib/promtail
+    command: ["-config.file=/etc/promtail/promtail-config.yml"]
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    restart: unless-stopped
+    networks: [observability-net]
+    ports:
+      - "${BIND_ADDRESS}:9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml.tmpl:ro
+      - ./alertmanager/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
+      - alertmanager_data:/alertmanager
+    # NOTE: prom/alertmanager (unlike prom/prometheus) has no --config.expand-env
+    # flag, so a small wrapper renders ${TZ} and ${NTFY_TOPIC} into the config
+    # before exec'ing alertmanager. See alertmanager/entrypoint.sh.
+    entrypoint: ["/bin/sh", "/usr/local/bin/entrypoint.sh"]
+    environment:
+      TZ: ${TZ}
+      NTFY_TOPIC: ${NTFY_TOPIC}
+
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: ntfy
+    restart: unless-stopped
+    networks: [observability-net]
+    ports:
+      - "${BIND_ADDRESS}:8081:80"
+    volumes:
+      - ./ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - ntfy_cache:/var/cache/ntfy
+    command: ["serve", "--config", "/etc/ntfy/server.yml"]
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  node_exporter_textfile:
+  loki_data:
+  promtail_positions:
+  alertmanager_data:
+  ntfy_cache:
+
+networks:
+  observability-net:
+    external: true

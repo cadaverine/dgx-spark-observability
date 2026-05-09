@@ -1,0 +1,64 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /var/lib/promtail/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # 1. Kernel log — most important for hardware postmortems (OOM, thermal, NVIDIA driver).
+  - job_name: kernel
+    static_configs:
+      - targets: [localhost]
+        labels:
+          host: spark        # override per host as needed
+          hardware: gb10     # override per host as needed
+          source: kernel
+          __path__: /var/log/kern.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\S+\s+\S+\s+\S+) (?P<hostname>\S+) kernel: (?P<message>.*)$'
+      - timestamp:
+          source: timestamp
+          format: 'Jan _2 15:04:05'
+      - labels:
+          hostname:
+      # OOM detection
+      - match:
+          selector: '{source="kernel"}'
+          stages:
+            - regex:
+                expression: 'Out of memory: Killed process \d+ \((?P<oom_process>[^)]+)\)'
+            - labels:
+                oom_process:
+            - static_labels:
+                oom_killed: "true"
+      # Thermal events
+      - match:
+          selector: '{source="kernel"}'
+          stages:
+            - regex:
+                expression: '(thermal|temperature|throttl)'
+            - static_labels:
+                thermal_event: "true"
+
+  # 2. System log — broader system events.
+  - job_name: syslog
+    static_configs:
+      - targets: [localhost]
+        labels:
+          host: spark        # override per host as needed
+          hardware: gb10     # override per host as needed
+          source: syslog
+          __path__: /var/log/syslog
+
+  # 3. Journald (uncomment if /var/log/journal is mounted; default Ubuntu uses syslog instead)
+  # - job_name: journal
+  #   journal:
+  #     max_age: 12h
+  #     labels:
+  #       host: spark
+  #       source: journal
